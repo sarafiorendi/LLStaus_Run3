@@ -1,13 +1,22 @@
 import FWCore.ParameterSet.Config as cms
 
+from PhysicsTools.NanoAOD.nano_eras_cff import *
+from PhysicsTools.NanoAOD.simpleCandidateFlatTableProducer_cfi import simpleCandidateFlatTableProducer
+## for 14_0_X
+from PhysicsTools.NanoAOD.simplePATJetFlatTableProducer_cfi import simplePATJetFlatTableProducer
+from PhysicsTools.NanoAOD.simplePATMuonFlatTableProducer_cfi import simplePATMuonFlatTableProducer
+
 from PhysicsTools.NanoAOD.common_cff import *
 from PhysicsTools.NanoAOD.genparticles_cff import *
 from PhysicsTools.NanoAOD.taus_cff import *
+from PhysicsTools.NanoAOD.muons_cff import *
 from PhysicsTools.NanoAOD.jetsAK4_CHS_cff import *
+from PhysicsTools.NanoAOD.jetsAK4_Puppi_cff import *
+#from PhysicsTools.NanoAOD.custom_muon_cff import *
 #from PhysicsTools.NanoAOD.jets_cff import *
 
-def customize_process_and_associate(process, disTauTagOutputOpt = 1) :
-    
+
+def customize_process_and_associate(process, isMC, disTauTagOutputOpt = 1, useCHSJets = True) :
     # Lost tracks
     process.lostTrackTable = cms.EDProducer("SimpleCandidateFlatTableProducer",
         src = cms.InputTag("lostTracks"),
@@ -21,8 +30,70 @@ def customize_process_and_associate(process, disTauTagOutputOpt = 1) :
             CandVars,
         )
     )
+
+    process.disMuonTable = simplePATMuonFlatTableProducer.clone(
+        src = cms.InputTag("slimmedDisplacedMuons"),
+        name = cms.string("DisMuon"),
+        doc = cms.string("Displaced Muon Collection"),
+        singleton = cms.bool(False), # the number of entries is variable
+        extension = cms.bool(False), # this is the main table
+        variables = cms.PSet(CandVars,
+            ptErr   = Var("bestTrack().ptError()", float, doc = "ptError of the muon track", precision=6),
+            dz = Var("dB('PVDZ')",float,doc="dz (with sign) wrt first PV, in cm",precision=10),
+            dzErr = Var("abs(edB('PVDZ'))",float,doc="dz uncertainty, in cm",precision=6),
+            dxybs = Var("dB('BS2D')",float,doc="dxy (with sign) wrt the beam spot, in cm",precision=10),
+            dxy = Var("dB('PV2D')",float,doc="dxy (with sign) wrt first PV, in cm",precision=10),
+            dxyErr = Var("edB('PV2D')",float,doc="dxy uncertainty, in cm",precision=6),
+            trkChi2 = Var("? globalTrack().isNonnull() ? globalTrack().normalizedChi2() : ? innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().normalizedChi2() : -99",float,doc="Normalized Chi Square from either globalTrack or innerTrack "),
+            muonHits = Var("? globalTrack().isNonnull() ? globalTrack().hitPattern().numberOfValidMuonHits() : ?  innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().hitPattern().numberOfValidMuonHits() :-99",float,doc="Number of valid Muon Hits from either globalTrack or innerTrack"),
+            pixelHits = Var("? innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().hitPattern().numberOfValidPixelHits() : -99", float, doc="Numbr of valid pixel hits"),
+            validFraction = Var("? innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().validFraction() : -99", float, doc="Inner Track Valid Fraction"),
+            positionChi2 = Var("combinedQuality().chi2LocalPosition", float, doc="chi2 Local Position"),
+            trkKink = Var("combinedQuality().trkKink", float, doc="Track Kink"),
+            ip3d = Var("abs(dB('PV3D'))",float,doc="3D impact parameter wrt first PV, in cm",precision=10),
+            sip3d = Var("abs(dB('PV3D')/edB('PV3D'))",float,doc="3D impact parameter significance wrt first PV",precision=10),
+            segmentComp   = Var("segmentCompatibility()", float, doc = "muon segment compatibility", precision=14), # keep higher precision since people have cuts with 3 digits on this
+            nStations = Var("numberOfMatchedStations", "uint8", doc = "number of matched stations with default arbitration (segment & track)"),
+            nTrackerLayers = Var("?track.isNonnull?innerTrack().hitPattern().trackerLayersWithMeasurement():0", "uint8", doc = "number of layers in the tracker"),
+            highPurity = Var("?track.isNonnull?innerTrack().quality('highPurity'):0", bool, doc = "inner track is high purity"),
+            jetIdx = Var("?hasUserCand('jet')?userCand('jet').key():-1", "int16", doc="index of the associated jet (-1 if none)"),
+            svIdx = Var("?hasUserCand('vertex')?userCand('vertex').key():-1", "int16", doc="index of matching secondary vertex"),
+            ),
+    )
+
+    process.disMuonsMCMatchForTable = cms.EDProducer("MCMatcher",       # cut on deltaR, deltaPt/Pt; pick best by deltaR
+        src         = process.disMuonTable.src,                         # final reco collection
+        matched     = cms.InputTag("finalGenParticles"),     # final mc-truth particle collection
+        mcPdgId     = cms.vint32(13),               # one or more PDG ID (13 = mu); absolute values (see below)
+        checkCharge = cms.bool(False),              # True = require RECO and MC objects to have the same charge
+        mcStatus    = cms.vint32(1),                # PYTHIA status code (1 = stable, 2 = shower, 3 = hard scattering)
+        maxDeltaR   = cms.double(0.3),              # Minimum deltaR for the match
+        maxDPtRel   = cms.double(0.5),              # Minimum deltaPt/Pt for the match
+        resolveAmbiguities    = cms.bool(True),     # Forbid two RECO objects to match to the same GEN object
+        resolveByMatchQuality = cms.bool(True),    # False = just match input in order; True = pick lowest deltaR pair first
+    )
+
+    process.disMuonMCTable = cms.EDProducer("CandMCMatchTableProducer",
+        src     = process.disMuonTable.src,
+        mcMap   = cms.InputTag("disMuonsMCMatchForTable"),
+        objName = process.disMuonTable.name,
+        objType = cms.string("Muon"), #cms.string("Muon"),
+        branchName = cms.string("genPart"),
+        docString = cms.string("MC matching to status==1 muons"),
+    )
     
-    
+    process.disMuonMCTask = cms.Task(process.disMuonsMCMatchForTable, process.disMuonMCTable)  
+    process.disMuonTablesTask = cms.Task(process.disMuonTable)
+
+    muonTableForID = muonTable.clone()
+    muonTableForID.variables.muonHits = Var("? globalTrack().isNonnull() ? globalTrack().hitPattern().numberOfValidMuonHits() : ?  innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().hitPattern().numberOfValidMuonHits() :-99",float,doc="Number of valid Muon Hits from either globalTrack or innerTrack")
+    muonTableForID.variables.pixelHits = Var("? innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().hitPattern().numberOfValidPixelHits() : -99", float, doc="Numbr of valid pixel hits")
+    muonTableForID.variables.trkChi2 = Var("? globalTrack().isNonnull() ? globalTrack().normalizedChi2() : ? innerTrack().isNonnull() && innerTrack().isAvailable() ? innerTrack().normalizedChi2() : -99",float,doc="Normalized Chi Square from either globalTrack or innerTrack ")
+    muonTableForID.variables.positionChi2 = Var("combinedQuality().chi2LocalPosition", float, doc="chi2 Local Position")
+    muonTableForID.variables.trkKink = Var("combinedQuality().trkKink", float, doc="Track Kink")
+    process.globalReplace("muonTable", muonTableForID)
+
+
     # PF candidates
     process.isFromTauForPfCand = cms.EDProducer("IsFromPatTauMapProducer",
         packedPFCandidates = cms.InputTag("packedPFCandidates"),
@@ -72,13 +143,13 @@ def customize_process_and_associate(process, disTauTagOutputOpt = 1) :
     process.tauTable.doc = cms.string("slimmedTaus after basic selection (" + process.finalTaus.cut.value()+")")
     
     
-    # CaloJets
-    process.caloJetTable = cms.EDProducer("SimpleCandidateFlatTableProducer",
-        src = cms.InputTag("slimmedCaloJets"),
+    # CaloJets // does not work
+    process.caloJetTable = cms.EDProducer("SimplePATJetFlatTableProducer",
+        src = cms.InputTag("slimmedJets"),
         #cut = cms.string(""),
         cut = cms.string("pt > 15"),
-        name= cms.string("CaloJet"),
-        doc = cms.string("AK4 calo jets"),
+        name= cms.string("Jet"),
+        doc = cms.string("slimmedJets"),
         singleton = cms.bool(False), # the number of entries is variable
         extension = cms.bool(False), # this is the main table
         variables = cms.PSet(
@@ -95,41 +166,33 @@ def customize_process_and_associate(process, disTauTagOutputOpt = 1) :
             #maxEInEmTowers                  = Var("maxEInEmTowers"                  , float),
             #maxEInHadTowers                 = Var("maxEInHadTowers"                 , float),
             #towersArea                      = Var("towersArea"                      , float),
-            detectorP4pt                    = Var("detectorP4.Pt"                   , float),
-            detectorP4eta                   = Var("detectorP4.Eta"                  , float),
-            detectorP4phi                   = Var("detectorP4.Phi"                  , float),
-            detectorP4mass                  = Var("detectorP4.M"                    , float),
-            detectorP4energy                = Var("detectorP4.E"                    , float),
+            ## following to be added back
+#             detectorP4pt                    = Var("detectorP4.Pt"                   , float),
+#             detectorP4eta                   = Var("detectorP4.Eta"                  , float),
+#             detectorP4phi                   = Var("detectorP4.Phi"                  , float),
+#             detectorP4mass                  = Var("detectorP4.M"                    , float),
+#             detectorP4energy                = Var("detectorP4.E"                    , float),
         ),
     )
     
+    if isMC:     
+        # GenParticles
+        myGenParticleTable = genParticleTable.clone()
+        myGenParticleTable.variables.vertexX        = Var("vertex.X"      , float)
+        myGenParticleTable.variables.vertexY        = Var("vertex.Y"      , float)
+        myGenParticleTable.variables.vertexZ        = Var("vertex.Z"      , float)
+        myGenParticleTable.variables.vertexRho      = Var("vertex.Rho"    , float)
+        myGenParticleTable.variables.vertexR        = Var("vertex.R"      , float)
     
-    # GenParticles
-    myGenParticleTable = genParticleTable.clone()
-    myGenParticleTable.variables.vertexX        = Var("vertex.X"      , float)
-    myGenParticleTable.variables.vertexY        = Var("vertex.Y"      , float)
-    myGenParticleTable.variables.vertexZ        = Var("vertex.Z"      , float)
-    myGenParticleTable.variables.vertexRho      = Var("vertex.Rho"    , float)
-    myGenParticleTable.variables.vertexR        = Var("vertex.R"      , float)
-    
-    process.globalReplace("genParticleTable", myGenParticleTable)
-    
-    
-    ## GenVisTau
-    #myGenVisTauTable = genVisTauTable.clone()
-    #myGenVisTauTable.variables.vertexX        = Var("vertex.X"      , float)
-    #myGenVisTauTable.variables.vertexY        = Var("vertex.Y"      , float)
-    #myGenVisTauTable.variables.vertexZ        = Var("vertex.Z"      , float)
-    #myGenVisTauTable.variables.vertexRho      = Var("vertex.Rho"    , float)
-    #myGenVisTauTable.variables.vertexR        = Var("vertex.R"      , float)
-    #
-    #process.globalReplace("genVisTauTable", myGenVisTauTable)
+        process.globalReplace("genParticleTable", myGenParticleTable) ## was commented out before JUn 19)
+        
     
     if (disTauTagOutputOpt > 0) :
-        
+        print("DisTauTagOutputOpt is ", disTauTagOutputOpt)
         process.disTauTag = cms.EDProducer(
             "DisTauTag",
-            graphPath = cms.string("data/particlenet_v1_a27159734e304ea4b7f9e0042baa9e22.pb"),
+#             graphPath = cms.string("data/particlenet_v1_a27159734e304ea4b7f9e0042baa9e22.pb"),
+            graphPath = cms.string("/afs/cern.ch/work/f/fiorendi/private/displacedTaus/desy/LLStaus_Run2/Production/data/models/particlenet_v1_a27159734e304ea4b7f9e0042baa9e22.pb"),
             #jets = cms.InputTag("finalJets"),
             jets = process.jetTable.src,
             pfCandidates = cms.InputTag('packedPFCandidates'),
@@ -147,31 +210,35 @@ def customize_process_and_associate(process, disTauTagOutputOpt = 1) :
     ##    **d_disTauTagVars
     ##)
     
-    
+
     # Create the task
     if (disTauTagOutputOpt == 0) :
-        
+         
         process.custom_nanoaod_task = cms.Task(
             process.lostTrackTable,
-            
             process.isFromTauForPfCand,
+#             process.disMuonTablesTask,
+#             process.disMuonMCTask,
             process.pfCandTable,
-            
             process.caloJetTable,
         )
     
     elif (disTauTagOutputOpt == 1) :
         
-        process.jetTable.externalVariables = process.jetTable.externalVariables.clone(**d_disTauTagVars)
+        print ('adding disTau edproducer')
+        if useCHSJets:
+          process.jetTable.externalVariables = process.jetTable.externalVariables.clone(**d_disTauTagVars)
+        ## for puppi jets, use this!
+        else:
+          process.jetPuppiTable.externalVariables = process.jetPuppiTable.externalVariables.clone(**d_disTauTagVars)
         
         process.custom_nanoaod_task = cms.Task(
-            process.lostTrackTable,
-            
+#             process.lostTrackTable,
             process.isFromTauForPfCand,
-            process.pfCandTable,
-            
-            process.caloJetTable,
-            
+#             process.pfCandTable,
+#             process.caloJetTable,
+            process.disMuonTablesTask,
+            process.disMuonMCTask,
             process.disTauTag,
         )
     

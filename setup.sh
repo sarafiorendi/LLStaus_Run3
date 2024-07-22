@@ -22,11 +22,11 @@ function run_cmd {
     fi
 }
 
-if [[ $MODE = "NanoAOD_UL2018" || "$MODE" == *"CMSSW"* ]] ; then
+if [[ $MODE = "NanoAOD_Run3" || "$MODE" == *"CMSSW"* ]] ; then
 
-    if [[ $MODE == "NanoAOD_UL2018" ]] ; then
-        CMSSW_VER="CMSSW_12_6_0_patch1"
-        export SCRAM_ARCH=slc7_amd64_gcc10
+    if [[ $MODE == "NanoAOD_Run3" ]] ; then
+        CMSSW_VER="CMSSW_14_0_7"
+        export SCRAM_ARCH=el8_amd64_gcc10
     elif [[ "$MODE" == *"CMSSW"* ]] ; then
         CMSSW_VER=$MODE
         export SCRAM_ARCH=slc7_amd64_gcc10
