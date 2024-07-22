@@ -187,10 +187,17 @@ associatePatAlgosToolsTask(process)
 # process.options.numberOfThreads = 4
 # process.options.numberOfStreams = 0
 
+from PhysicsTools.NanoAOD.custom_btv_cff import *
+def BTVCustomNanoAODStaus(process):
+    addPFCands(process,btvNano_switch.btvNano_addallPF_switch,btvNano_switch.btvNano_addAK4_switch,btvNano_switch.btvNano_addAK8_switch)
+    
+    ### for MC
+    process.load("PhysicsTools.NanoAOD.btvMC_cff")
+    process.nanoSequenceMC+=ak4onlyPFCandsMCSequence
+    return process
 
-# add BTV part
-from PhysicsTools.NanoAOD.custom_btv_cff import BTVCustomNanoAOD
-process = BTVCustomNanoAOD(process)
+process = BTVCustomNanoAODStaus(process)
+
 
 if use_CHS_jets:
   process.finalJetsAK4Constituents.src = src = cms.InputTag("finalJets")
