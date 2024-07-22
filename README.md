@@ -1,11 +1,11 @@
 # Long-lived stau repository
 
-This repository is to perform the long-lives stau searches at DESY CMS.
+This repository is ts forked from the original one from DESY to perform the long-lives stau searches at CMS.
 
 # Environment installation
 1. Clone package from the github without loading any additional environment (like CMSSW):
     ```sh
-    > git clone -o DESY-CMS-SUSY-TAU -b master --recurse-submodules git@github.com:DESY-CMS-SUSY-TAU/LLStaus_Run2.git
+    > git clone -b run3_14_0_x_production --recurse-submodules git@github.com:sarafiorendi/LLStaus_Run3.git
     > cd LLStaus_Run2
     > git submodule update --init --recursive # Update the submodules
     ```
@@ -19,6 +19,7 @@ This repository is to perform the long-lives stau searches at DESY CMS.
     where supported `ENVIRONMENT` are:
     - `NanoAOD_UL2018`: step for production of the customized NanoAOD tuples. 
     - `conda`: anaconda environment - used for all the analysis except the production of NanoAOD.
+    - `NanoAOD_Run3`: env to produce custom NANO on Run3 MC samples
 
 # Nano Tuple production
 See documentation [here](Analysis/README.md)
